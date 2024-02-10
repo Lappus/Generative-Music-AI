@@ -15,18 +15,17 @@ import tensorboard
 #print("Train files:", train_images[:5])
 #print("Test files:", test_images[:5])
 
+idx = train_labels==3
+filtered_train_images = train_images[idx]
+filtered_train_labels = train_labels[idx]
+
 BATCH_SIZE=256
 BUFFER_SIZE=60000
 
 train_images = train_images.reshape(train_images.shape[0], 28, 28, 1).astype('float32')
 train_images = (train_images - 127.5) / 127.5
 
-
 train_ds = tf.data.Dataset.from_tensor_slices(train_images).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
-
-
-filtered_train_images = train_images[train_labels == 1]
-filtered_train_labels = train_labels[train_labels == 1]
 
 filtered_train_images = train_images.reshape(train_images.shape[0], 28, 28, 1).astype('float32')
 filtered_train_images = (train_images - 127.5) / 127.5
@@ -156,7 +155,7 @@ checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
 
 #---------------------------------------------- Training the model ----------------------------------------------#
 
-EPOCHS = 8
+EPOCHS = 60
 noise_dim = 100
 num_examples_to_generate = 9
 
@@ -203,13 +202,13 @@ test_summary_writer = tf.summary.create_file_writer(test_log_dir)
 checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
 def train(dataset, epochs):
-    epochs_part = epochs/4
+    epochs_parts = epochs/2
     total_batches = len(dataset)
     
 
     for stage in range(2):
         print('Starting to train stage:', stage+1)
-        for epoch in range(int(epochs_part)):
+        for epoch_part in range(int(epochs_parts)):
             start_time = time.time()
             image_progress = 0
 
@@ -217,27 +216,32 @@ def train(dataset, epochs):
                 train_discriminator(images_batch, image_progress)
                 image_progress += 1
                 completion_percentage = image_progress/total_batches
-                print('Training Discriminator: {:.2f}% complete in {:.2f} sec'.format(completion_percentage*100, time.time()-start_time))
             
-            if (epoch + 1) % 10 == 0 or completion_percentage == 1:
+                if image_progress % 20 == 0 or completion_percentage == 1:
+                    print('Training Discriminator: {:.2f}% complete'.format(completion_percentage*100))
+            
+            if (epoch_part + 1) % 10 == 0:
                 checkpoint.save(file_prefix=checkpoint_prefix)
-                print('Time for epoch {} is {:.2f} sec'.format(epoch+1, time.time()-start_time))
+                print('Time for epoch {} is {:.2f} sec'.format(epoch_part+1, time.time()-start_time))
 
-        counter = 0
-        for epoch in range(int(epochs_part)):
+        for epoch_part in range(int(epochs_parts)):
             start_time = time.time() 
-            step = 0
+            image_progress = 0
 
             for images_batch in dataset:
-                step += 1
-                train_generator(step)
-                print('Training Generator: Step {} complete in {:.2f} sec'.format(step, time.time()-start_time))
+                train_generator(image_progress)
+                image_progress += 1
+                completion_percentage = image_progress/total_batches
 
-            if (counter) % 10 == 0:
+                if image_progress % 20 == 0 or completion_percentage == 1:
+                    print('Training Generator: {:.2f}% complete'.format(completion_percentage*100))
+                
+            epoch = (epoch_part+1)*(stage+1)
+            if (epoch_part + 1) % 10 == 0:
                 checkpoint.save(file_prefix=checkpoint_prefix)
-                print('Time for epoch {} is {} sec'.format(counter+1, time.time()-start_time))
+                print('Time for epoch {} is {} sec'.format(epoch, time.time()-start_time))
             
-            generate_and_save_images(generator, stage+1, epoch+1, seed)
+            generate_and_save_images(generator, stage+1, epoch, seed)
             #discriminator_loss.reset_states()
             #generator_loss.reset_states()
     generate_and_save_images(generator,stage=3, epoch=epochs, test_input=seed)
