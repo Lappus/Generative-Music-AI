@@ -5,7 +5,7 @@ import os
 import time
 import os 
 import tensorboard
-(train_images, train_lables), (test_images, test_labels) = tf.keras.datasets.mnist.load_data()  
+(train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.mnist.load_data()  
 
 #print("Number of training files:", len(train_images))
 #print("Number of testing files:", len(test_images))
@@ -20,7 +20,19 @@ BUFFER_SIZE=20000
 train_images = train_images.reshape(train_images.shape[0], 28, 28, 1).astype('float32')
 train_images = (train_images - 127.5) / 127.5
 test_images = (test_images -127.5) / 127.5
+
 train_ds = tf.data.Dataset.from_tensor_slices(train_images).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
+
+
+filtered_train_images = train_images[train_labels == 1]
+filtered_train_labels = train_labels[train_labels == 1]
+filtered_test_images = test_images[test_labels == 1]
+filtered_test_labels = test_labels[test_labels == 1]
+
+filtered_train_images = train_images.reshape(train_images.shape[0], 28, 28, 1).astype('float32')
+filtered_train_images = (train_images - 127.5) / 127.5
+
+filtered_train_ds = tf.data.Dataset.from_tensor_slices(filtered_train_images).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
 
 #---------------------------------------------- Model initialisation ----------------------------------------------#
 
@@ -29,27 +41,23 @@ class Discriminator_model(tf.keras.Model):
         super(Discriminator_model, self).__init__()
 
         self.convlayer1 = tf.keras.layers.Conv2D(filters=64, kernel_size=5, padding='same', activation='relu')
-        #self.leakyRelu1 = tf.keras.layers.LeakyReLU()
         self.dropout1 = tf.keras.layers.Dropout(0.3)
         self.pooling1 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2)
 
         self.convlayer2 = tf.keras.layers.Conv2D(filters=128, kernel_size=5, padding='same', activation='relu')
-        #self.leakyRelu2 = tf.keras.layers.LeakyReLU()
         self.dropout2 = tf.keras.layers.Dropout(0.3)
         self.pooling2 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2)
 
-        self.pooling3 = tf.keras.layers.AveragePooling2D()
+        self.pooling3 = tf.keras.layers.GlobalAveragePooling2D()
         self.out = tf.keras.layers.Dense(1)
 
-    @tf.function
+    @tf.function(reduce_retracing=True)
     def call(self,x):
         x = self.convlayer1(x)
-        #x = self.leakyRelu1(x)
         x = self.dropout1(x)
         x = self.pooling1(x)
 
         x = self.convlayer2(x)
-        #x = self.leakyRelu2(x)
         x = self.dropout2(x)
         x = self.pooling2(x)
 
@@ -64,7 +72,7 @@ class gen_Layer(tf.keras.layers.Layer):
         self.convtrans1 = tf.keras.layers.Conv2DTranspose(filters=num_filters, kernel_size=5, strides=(1,1), padding='same')
         self.convtrans2 = tf.keras.layers.Conv2DTranspose(filters=num_filters, kernel_size=5, strides=(2,2), padding='same')
 
-    @tf.function
+    @tf.function(reduce_retracing=True)
     def call(self, x):
         x = self.convtrans1(x)
         x = self.convtrans2(x)
@@ -93,7 +101,7 @@ class Generator_model(tf.keras.Model):
 
         self.contrans4 = tf.keras.layers.Conv2DTranspose(filters=1, kernel_size=5, strides=(2,2), activation='tanh')
 
-    @tf.function
+    @tf.function(reduce_retracing=True)
     def call(self, x):
         x = self.denselayer1(x)
         x = self.reshape(x)
@@ -144,7 +152,7 @@ checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
 
 #---------------------------------------------- Training the model ----------------------------------------------#
 
-EPOCHS = 20
+EPOCHS = 8
 noise_dim = 100
 num_examples_to_generate = 9
 
@@ -188,7 +196,7 @@ test_log_dir = 'logs/test'
 train_summary_writer = tf.summary.create_file_writer(train_log_dir)
 test_summary_writer = tf.summary.create_file_writer(test_log_dir)
 
-@tf.function
+'''@tf.function
 def train_step(images):
     noise = tf.random.normal([BATCH_SIZE, noise_dim])
 
@@ -196,7 +204,7 @@ def train_step(images):
         generated_images = generator(noise, training=True)
 
         real_output = discriminator(images, training=True)
-        fake_output = discriminator(generated_images, training=True)
+       fake_output = discriminator(generated_images, training=True)
 
         gen_loss = generator_loss(fake_output)
         disc_loss = discriminator_loss(real_output, fake_output)
@@ -221,60 +229,54 @@ def train(dataset, epochs):
         print('Time for epoch {} is {} sec'.format(epoch+1, time.time()-start))
     
     generate_and_save_images(generator, epochs, seed)
+'''
+seed = tf.random.normal([num_examples_to_generate, noise_dim])
 
+checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
-#def train(dataset, epochs):
-#    epochspart = epochs/4
-#    counter = 0
-#    total_batches = len(dataset)
+def train(dataset, epochs):
+    epochs_part = epochs/4
+    total_batches = len(dataset)
     
 
-#    for i in range(2):
-#        print('Starting to train stage:', i+1)
-#        for epoch in range(int(epochspart)):
-#            start = time.time()
-#            imageprogression = 0
+    for stage in range(2):
+        print('Starting to train stage:', stage+1)
+        for epoch in range(int(epochs_part)):
+            start_time = time.time()
+            image_progress = 0
 
-#            for images_batch in dataset:
-#                train_discriminator(images_batch, imageprogression)
-#                imageprogression += 1
-#                condition = imageprogression/total_batches
-#                print('imageprogression:', imageprogression, 'in total_batches:', total_batches )
-#                print('Training Discriminator with {} procent in {} sec'.format(condition, time.time()-start))
-#            
-#           counter += 1
+            for images_batch in dataset:
+                train_discriminator(images_batch, image_progress)
+                image_progress += 1
+                completion_percentage = image_progress/total_batches
+                print('Training Discriminator: {:.2f}% complete in {:.2f} sec'.format(completion_percentage*100, time.time()-start_time))
             
-#            if (counter) % 10 == 0 or condition == 1:
-#                checkpoint.save(file_prefix=checkpoint_prefix)
-#                print('Time for epoch {} is {} sec and a total of {} sec'.format(counter, time.time()-start, time.time()))
+            if (epoch + 1) % 10 == 0 or completion_percentage == 1:
+                checkpoint.save(file_prefix=checkpoint_prefix)
+                print('Time for epoch {} is {:.2f} sec'.format(epoch+1, time.time()-start_time))
 
-#       counter = 0
-#       for epoch in range(int(epochspart)):
-#           start = time.time() 
-#            step = 0
+        counter = 0
+        for epoch in range(int(epochs_part)):
+            start_time = time.time() 
+            step = 0
 
-#           for images_batch in dataset:
-#                step += 1
-#                train_generator(step)
-#               print('Training Generator in Step {} procent in {} sec'.format(step, time.time()-start))
+            for images_batch in dataset:
+                step += 1
+                train_generator(step)
+                print('Training Generator: Step {} complete in {:.2f} sec'.format(step, time.time()-start_time))
 
-#            counter += 1
-
-#            generate_and_save_images(generator, epoch+1, seed)
+            if (counter) % 10 == 0:
+                checkpoint.save(file_prefix=checkpoint_prefix)
+                print('Time for epoch {} is {} sec'.format(counter+1, time.time()-start_time))
             
-
-#            if (counter) % 10 == 0:
-#                checkpoint.save(file_prefix=checkpoint_prefix)
-#                print('Time for epoch {} is {} sec'.format(counter+1, time.time()-start))
-            
-#            generate_and_save_images(generator, epoch+1, seed)
+            generate_and_save_images(generator, stage+1, epoch+1, seed)
             #discriminator_loss.reset_states()
             #generator_loss.reset_states()
-#        generate_and_save_images(generator, epoch+1, seed)
+    generate_and_save_images(generator,stage=3, epoch=epochs, test_input=seed)
 
-#checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
-def generate_and_save_images(model, epoch, test_input):
+
+def generate_and_save_images(model, stage, epoch, test_input):
     predictions = model(test_input, training=False)
 
     fig = plt.figure(figsize=(4, 4))
@@ -284,10 +286,10 @@ def generate_and_save_images(model, epoch, test_input):
         plt.imshow(predictions[i, :, :, 0] * 127.5 + 127.5, cmap='gray')
         plt.axis('off')
     
-    plt.savefig('Mnist/image_at_epoch_{:04d}.png'.format(epoch))
+    plt.savefig('Mnist/image_stage_{:04d}_epoch_{:04d}.png'.format(stage, epoch))
 
 
-subset_size = 4  
-train_subset = train_ds.take(subset_size)
+subset_size = 20  
+train_subset = filtered_train_ds.take(subset_size)
 
-train(train_ds, EPOCHS)
+train(train_subset, EPOCHS)
