@@ -5,6 +5,7 @@ import os
 import time
 import os 
 import tensorboard
+
 (train_images, train_labels), _ = tf.keras.datasets.mnist.load_data()  
 
 #print("Number of training files:", len(train_images))
@@ -15,7 +16,7 @@ import tensorboard
 #print("Test files:", test_images[:5])
 
 BATCH_SIZE=256
-BUFFER_SIZE=20000
+BUFFER_SIZE=60000
 
 train_images = train_images.reshape(train_images.shape[0], 28, 28, 1).astype('float32')
 train_images = (train_images - 127.5) / 127.5
@@ -38,11 +39,13 @@ class Discriminator_model(tf.keras.Model):
     def __init__(self):
         super(Discriminator_model, self).__init__()
 
-        self.convlayer1 = tf.keras.layers.Conv2D(filters=64, kernel_size=5, padding='same', activation='relu')
+        self.convlayer1 = tf.keras.layers.Conv2D(filters=64, kernel_size=5, strides=(2,2), padding='same', activation='relu', input_shape=[28, 28, 1])
+        self.leakyRelu1 = tf.keras.layers.LeakyReLU()
         self.dropout1 = tf.keras.layers.Dropout(0.3)
         self.pooling1 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2)
 
-        self.convlayer2 = tf.keras.layers.Conv2D(filters=128, kernel_size=5, padding='same', activation='relu')
+        self.convlayer2 = tf.keras.layers.Conv2D(filters=128, kernel_size=5, strides=(2,2), padding='same', activation='relu')
+        self.leakyRelu2 = tf.keras.layers.LeakyReLU()
         self.dropout2 = tf.keras.layers.Dropout(0.3)
         self.pooling2 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2)
 
@@ -52,10 +55,12 @@ class Discriminator_model(tf.keras.Model):
     @tf.function(reduce_retracing=True)
     def call(self,x):
         x = self.convlayer1(x)
+        x = self.leakyRelu1(x)
         x = self.dropout1(x)
         x = self.pooling1(x)
 
         x = self.convlayer2(x)
+        x = self.leakyRelu2(x)
         x = self.dropout2(x)
         x = self.pooling2(x)
 
@@ -63,18 +68,18 @@ class Discriminator_model(tf.keras.Model):
         x = self.out(x)
         return x 
 
-class gen_Layer(tf.keras.layers.Layer):
-    def __init__ (self, num_filters):
-        super(gen_Layer, self).__init__()
+#class gen_Layer(tf.keras.layers.Layer):
+#    def __init__ (self, num_filters):
+#        super(gen_Layer, self).__init__()
 
-        self.convtrans1 = tf.keras.layers.Conv2DTranspose(filters=num_filters, kernel_size=5, strides=(1,1), padding='same')
-        self.convtrans2 = tf.keras.layers.Conv2DTranspose(filters=num_filters, kernel_size=5, strides=(2,2), padding='same')
+#       self.convtrans1 = tf.keras.layers.Conv2DTranspose(filters=num_filters, kernel_size=5, strides=(1,1), padding='same')
+#        self.convtrans2 = tf.keras.layers.Conv2DTranspose(filters=num_filters, kernel_size=5, strides=(2,2), padding='same')
 
-    @tf.function(reduce_retracing=True)
-    def call(self, x):
-        x = self.convtrans1(x)
-        x = self.convtrans2(x)
-        return x    
+#    @tf.function(reduce_retracing=True)
+#    def call(self, x):
+#        x = self.convtrans1(x)
+#        x = self.convtrans2(x)
+#        return x    
 
 class Generator_model(tf.keras.Model):
     def __init__(self):
@@ -85,36 +90,37 @@ class Generator_model(tf.keras.Model):
         self.leakyRelu1 = tf.keras.layers.LeakyReLU()
         self.reshape = tf.keras.layers.Reshape((7, 7, 256))
 
-        self.contrans1 = gen_Layer(num_filters=128)
+        self.conv2dTrans1 = tf.keras.layers.Conv2DTranspose(128, (5, 5), strides=(1,1), padding='same')
         self.batchNormalization2 = tf.keras.layers.BatchNormalization()
         self.leakyRelu2 = tf.keras.layers.LeakyReLU()
 
-        self.contrans2 = gen_Layer(num_filters=64)
+        self.conv2dTrans2 = tf.keras.layers.Conv2DTranspose(64, (5, 5), strides=(2,2), padding='same')
         self.batchNormalization3 = tf.keras.layers.BatchNormalization()
         self.leakyRelu3 = tf.keras.layers.LeakyReLU()
 
-        self.contrans3 = gen_Layer(num_filters=32)
-        self.batchNormalization4 = tf.keras.layers.BatchNormalization()
-        self.leakyRelu4 = tf.keras.layers.LeakyReLU()
+        #self.conv2dTrans3 = tf.keras.layers.Conv2DTranspose(32, (5, 5), strides=(2,2), padding='same')
+        #self.batchNormalization4 = tf.keras.layers.BatchNormalization()
+        #self.leakyRelu4 = tf.keras.layers.LeakyReLU()
 
-        self.contrans4 = tf.keras.layers.Conv2DTranspose(filters=1, kernel_size=5, strides=(2,2), activation='tanh')
+        self.conv2dTrans4 = tf.keras.layers.Conv2DTranspose(filters=1, kernel_size=5, strides=(2,2), activation='tanh')
 
     @tf.function(reduce_retracing=True)
     def call(self, x):
         x = self.denselayer1(x)
-        x = self.reshape(x)
         x = self.batchNormalization1(x)
         x = self.leakyRelu1(x)
-        x = self.contrans1(x)
+        x = self.reshape(x)
+        x = self.conv2dTrans1(x)
         x = self.batchNormalization2(x)
         x = self.leakyRelu2(x)
-        x = self.contrans2(x)
+        x = self.conv2dTrans2(x)
         x = self.batchNormalization3(x)
         x = self.leakyRelu3(x)
-        x = self.contrans3(x)
-        x = self.batchNormalization4(x)
-        x = self.leakyRelu4(x)
-        x = self.contrans4(x)
+        #x = self.conv2dTrans3(x)
+        #x = self.batchNormalization4(x)
+        #x = self.leakyRelu4(x)
+        x = self.conv2dTrans4(x)
+        
         return x 
 
 discriminator = Discriminator_model()
@@ -194,7 +200,6 @@ test_log_dir = 'logs/test'
 train_summary_writer = tf.summary.create_file_writer(train_log_dir)
 test_summary_writer = tf.summary.create_file_writer(test_log_dir)
 
-
 checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
 def train(dataset, epochs):
@@ -238,6 +243,44 @@ def train(dataset, epochs):
     generate_and_save_images(generator,stage=3, epoch=epochs, test_input=seed)
 
 
+'''
+@tf.function
+def train_step(images):
+    noise = tf.random.normal([BATCH_SIZE, noise_dim])
+
+    with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
+        generated_images = generator(noise, training=True)
+
+        real_output = discriminator(images, training=True)
+        fake_output = discriminator(generated_images, training=True)
+
+        gen_loss = generator_loss(fake_output)
+        disc_loss = discriminator_loss(real_output, fake_output)
+    
+    gradients_of_gen = gen_tape.gradient(gen_loss, generator.trainable_variables)
+    gradients_of_disc = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
+
+    generator_optimizer.apply_gradients(zip(gradients_of_gen, generator.trainable_variables))
+    discriminator_optimizer.apply_gradients(zip(gradients_of_disc, discriminator.trainable_variables))
+
+def train(dataset, epochs):
+    for epoch in range(epochs):
+        start = time.time()
+        counter = 0
+        total = len(dataset)
+
+        for image_batch in dataset:
+            counter+=1
+            train_step(image_batch)
+            print('Training Model: {} from {} complete in {:.2f} sec'.format(counter, total, time.time()-start))
+        generate_and_save_images(generator, stage=1, epoch=epoch+1, test_input=seed)
+
+        if (epoch + 1) % 10 == 0:
+            checkpoint.save(file_prefix=checkpoint_prefix)
+        print('Time for epoch {} is {} sec'.format(epoch+1, time.time()-start))
+    
+    generate_and_save_images(generator, stage=1, epoch=epochs, test_input=seed)
+'''
 
 def generate_and_save_images(model, stage, epoch, test_input):
     predictions = model(test_input, training=False)
@@ -255,4 +298,4 @@ def generate_and_save_images(model, stage, epoch, test_input):
 subset_size = 20  
 train_subset = filtered_train_ds.take(subset_size)
 
-train(train_subset, EPOCHS)
+train(filtered_train_ds, EPOCHS)
