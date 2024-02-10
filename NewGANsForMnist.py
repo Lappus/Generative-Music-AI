@@ -155,7 +155,7 @@ checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
 
 #---------------------------------------------- Training the model ----------------------------------------------#
 
-EPOCHS = 60
+EPOCHS = 20
 noise_dim = 100
 num_examples_to_generate = 9
 
@@ -219,7 +219,9 @@ def train(dataset, epochs):
             
                 if image_progress % 20 == 0 or completion_percentage == 1:
                     print('Training Discriminator: {:.2f}% complete'.format(completion_percentage*100))
-            
+
+            print('Epoch {} took {:.2f} sec'.format(epoch_part+1, time.time()-start_time))
+
             if (epoch_part + 1) % 10 == 0:
                 checkpoint.save(file_prefix=checkpoint_prefix)
                 print('Time for epoch {} is {:.2f} sec'.format(epoch_part+1, time.time()-start_time))
@@ -235,7 +237,9 @@ def train(dataset, epochs):
 
                 if image_progress % 20 == 0 or completion_percentage == 1:
                     print('Training Generator: {:.2f}% complete'.format(completion_percentage*100))
-                
+
+            print('Epoch {} took {:.2f} sec'.format(epoch_part+1, time.time()-start_time))
+
             epoch = (epoch_part+1)*(stage+1)
             if (epoch_part + 1) % 10 == 0:
                 checkpoint.save(file_prefix=checkpoint_prefix)
