@@ -5,7 +5,7 @@ import os
 import time
 import os 
 import tensorboard
-(train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.mnist.load_data()  
+(train_images, train_labels), _ = tf.keras.datasets.mnist.load_data()  
 
 #print("Number of training files:", len(train_images))
 #print("Number of testing files:", len(test_images))
@@ -19,15 +19,13 @@ BUFFER_SIZE=20000
 
 train_images = train_images.reshape(train_images.shape[0], 28, 28, 1).astype('float32')
 train_images = (train_images - 127.5) / 127.5
-test_images = (test_images -127.5) / 127.5
+
 
 train_ds = tf.data.Dataset.from_tensor_slices(train_images).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
 
 
 filtered_train_images = train_images[train_labels == 1]
 filtered_train_labels = train_labels[train_labels == 1]
-filtered_test_images = test_images[test_labels == 1]
-filtered_test_labels = test_labels[test_labels == 1]
 
 filtered_train_images = train_images.reshape(train_images.shape[0], 28, 28, 1).astype('float32')
 filtered_train_images = (train_images - 127.5) / 127.5
