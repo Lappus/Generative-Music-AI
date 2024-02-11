@@ -38,17 +38,17 @@ class Discriminator_model(tf.keras.Model):
     def __init__(self):
         super(Discriminator_model, self).__init__()
 
-        self.convlayer1 = tf.keras.layers.Conv2D(filters=64, kernel_size=5, strides=(2,2), padding='same', activation='relu', input_shape=[28, 28, 1])
+        self.convlayer1 = tf.keras.layers.Conv2D(filters=64, kernel_size=5, strides=(2,2), padding='same', input_shape=[28, 28, 1])
         self.leakyRelu1 = tf.keras.layers.LeakyReLU()
         self.dropout1 = tf.keras.layers.Dropout(0.3)
         self.pooling1 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2)
 
-        self.convlayer2 = tf.keras.layers.Conv2D(filters=128, kernel_size=5, strides=(2,2), padding='same', activation='relu')
+        self.convlayer2 = tf.keras.layers.Conv2D(filters=128, kernel_size=5, strides=(2,2), padding='same')
         self.leakyRelu2 = tf.keras.layers.LeakyReLU()
         self.dropout2 = tf.keras.layers.Dropout(0.3)
         self.pooling2 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2)
 
-        self.pooling3 = tf.keras.layers.GlobalAveragePooling2D()
+        self.pooling3 = tf.keras.layers.Flatten()
         self.out = tf.keras.layers.Dense(1)
 
     @tf.function(reduce_retracing=True)
@@ -56,12 +56,12 @@ class Discriminator_model(tf.keras.Model):
         x = self.convlayer1(x)
         x = self.leakyRelu1(x)
         x = self.dropout1(x)
-        x = self.pooling1(x)
+        #x = self.pooling1(x)
 
         x = self.convlayer2(x)
         x = self.leakyRelu2(x)
         x = self.dropout2(x)
-        x = self.pooling2(x)
+        #x = self.pooling2(x)
 
         x = self.pooling3(x)
         x = self.out(x)
@@ -89,11 +89,11 @@ class Generator_model(tf.keras.Model):
         self.leakyRelu1 = tf.keras.layers.LeakyReLU()
         self.reshape = tf.keras.layers.Reshape((7, 7, 256))
 
-        self.conv2dTrans1 = tf.keras.layers.Conv2DTranspose(128, (5, 5), strides=(1,1), padding='same')
+        self.conv2dTrans1 = tf.keras.layers.Conv2DTranspose(128, (5, 5), strides=(1,1), padding='same', use_bias=False)
         self.batchNormalization2 = tf.keras.layers.BatchNormalization()
         self.leakyRelu2 = tf.keras.layers.LeakyReLU()
 
-        self.conv2dTrans2 = tf.keras.layers.Conv2DTranspose(64, (5, 5), strides=(2,2), padding='same')
+        self.conv2dTrans2 = tf.keras.layers.Conv2DTranspose(64, (5, 5), strides=(2,2), padding='same', use_bias=False)
         self.batchNormalization3 = tf.keras.layers.BatchNormalization()
         self.leakyRelu3 = tf.keras.layers.LeakyReLU()
 
@@ -101,7 +101,7 @@ class Generator_model(tf.keras.Model):
         #self.batchNormalization4 = tf.keras.layers.BatchNormalization()
         #self.leakyRelu4 = tf.keras.layers.LeakyReLU()
 
-        self.conv2dTrans4 = tf.keras.layers.Conv2DTranspose(filters=1, kernel_size=5, strides=(2,2), activation='tanh')
+        self.conv2dTrans4 = tf.keras.layers.Conv2DTranspose(filters=1, kernel_size=5, padding='same', strides=(2,2), use_bias=False, activation='tanh')
 
     @tf.function(reduce_retracing=True)
     def call(self, x):
@@ -155,12 +155,12 @@ checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
 
 #---------------------------------------------- Training the model ----------------------------------------------#
 
-EPOCHS = 20
+EPOCHS = 50
 noise_dim = 100
-num_examples_to_generate = 9
+num_examples_to_generate = 8
 
 seed = tf.random.normal([num_examples_to_generate, noise_dim])
-
+'''
 @tf.function(reduce_retracing=True)
 def train_discriminator(images, step):
     noise = tf.random.normal([BATCH_SIZE, noise_dim])
@@ -250,15 +250,20 @@ def train(dataset, epochs):
             #generator_loss.reset_states()
     generate_and_save_images(generator,stage=3, epoch=epochs, test_input=seed)
 
-
 '''
+discriminator_losses = []
+generator_losses = []
+
+generator_summary_writer = tf.summary.create_file_writer('Generative-Music-AI/logs/generator')
+discriminator_summary_writer = tf.summary.create_file_writer('Generative-Music-AI/logs/discriminator')
+
 @tf.function
 def train_step(images):
     noise = tf.random.normal([BATCH_SIZE, noise_dim])
 
     with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
         generated_images = generator(noise, training=True)
-
+        
         real_output = discriminator(images, training=True)
         fake_output = discriminator(generated_images, training=True)
 
@@ -271,24 +276,45 @@ def train_step(images):
     generator_optimizer.apply_gradients(zip(gradients_of_gen, generator.trainable_variables))
     discriminator_optimizer.apply_gradients(zip(gradients_of_disc, discriminator.trainable_variables))
 
+    return gen_loss, disc_loss 
+
 def train(dataset, epochs):
     for epoch in range(epochs):
         start = time.time()
-        counter = 0
-        total = len(dataset)
+        image_progress = 0
+        total_batches = len(dataset)
+        epoch_generator_losses = []
+        epoch_discriminator_losses = []
 
         for image_batch in dataset:
-            counter+=1
-            train_step(image_batch)
-            print('Training Model: {} from {} complete in {:.2f} sec'.format(counter, total, time.time()-start))
+            gen_loss, disc_loss = train_step(image_batch)
+            epoch_discriminator_losses.append(disc_loss)
+            epoch_generator_losses.append(gen_loss)
+            image_progress += 1
+            completion_percentage = image_progress/total_batches
+            
+            if image_progress % 40 == 0 or completion_percentage == 1:
+                print('Training Model: {:.2f}% complete'.format(completion_percentage*100))
+
+        avg_gen_loss = np.mean(epoch_generator_losses)
+        avg_disc_loss = np.mean(epoch_discriminator_losses)
+        
+        generator_losses.append(avg_gen_loss)
+        discriminator_losses.append(avg_disc_loss)
+
+        with generator_summary_writer.as_default():
+            tf.summary.scalar('generator_loss', avg_gen_loss, step=epoch)
+        with discriminator_summary_writer.as_default():
+            tf.summary.scalar('discriminator_loss', avg_disc_loss, step=epoch)
+            
         generate_and_save_images(generator, stage=1, epoch=epoch+1, test_input=seed)
 
         if (epoch + 1) % 10 == 0:
             checkpoint.save(file_prefix=checkpoint_prefix)
         print('Time for epoch {} is {} sec'.format(epoch+1, time.time()-start))
-    
+
     generate_and_save_images(generator, stage=1, epoch=epochs, test_input=seed)
-'''
+
 
 def generate_and_save_images(model, stage, epoch, test_input):
     predictions = model(test_input, training=False)
@@ -307,3 +333,4 @@ subset_size = 20
 train_subset = filtered_train_ds.take(subset_size)
 
 train(filtered_train_ds, EPOCHS)
+
