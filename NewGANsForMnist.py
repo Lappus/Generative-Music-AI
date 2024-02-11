@@ -4,85 +4,42 @@ import numpy as np
 import os
 import time
 import os 
+import datetime
+
 import tensorboard
 
-(train_images, train_labels), _ = tf.keras.datasets.mnist.load_data()  
+(train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.mnist.load_data()  
 
 #print("Number of training files:", len(train_images))
 #print("Number of testing files:", len(test_images))
 
-# Print the first few files in each set (optional)
 #print("Train files:", train_images[:5])
 #print("Test files:", test_images[:5])
 
-idx = train_labels==3
+#-------------------------------# Data Preprocessing Pipeline #-------------------------------#
+# Hyperparameter
+BUFFER_SIZE = 60000
+BATCH_SIZE = 256
+
+idx = train_labels == 3
 filtered_train_images = train_images[idx]
 filtered_train_labels = train_labels[idx]
 
-BATCH_SIZE=256
-BUFFER_SIZE=60000
+filtered_train_images = filtered_train_images.reshape(filtered_train_images.shape[0], 28, 28, 1).astype('float32')
+filtered_train_images = (filtered_train_images - 127.5) / 127.5
+filtered_train_ds = tf.data.Dataset.from_tensor_slices(filtered_train_images).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
 
 train_images = train_images.reshape(train_images.shape[0], 28, 28, 1).astype('float32')
 train_images = (train_images - 127.5) / 127.5
-
 train_ds = tf.data.Dataset.from_tensor_slices(train_images).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
-
-filtered_train_images = train_images.reshape(train_images.shape[0], 28, 28, 1).astype('float32')
-filtered_train_images = (train_images - 127.5) / 127.5
-
-filtered_train_ds = tf.data.Dataset.from_tensor_slices(filtered_train_images).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
 
 #---------------------------------------------- Model initialisation ----------------------------------------------#
 
-class Discriminator_model(tf.keras.Model):
+#                                                  The Generator                                                   #
+
+class generator_model(tf.keras.Model):
     def __init__(self):
-        super(Discriminator_model, self).__init__()
-
-        self.convlayer1 = tf.keras.layers.Conv2D(filters=64, kernel_size=5, strides=(2,2), padding='same', input_shape=[28, 28, 1])
-        self.leakyRelu1 = tf.keras.layers.LeakyReLU()
-        self.dropout1 = tf.keras.layers.Dropout(0.3)
-        self.pooling1 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2)
-
-        self.convlayer2 = tf.keras.layers.Conv2D(filters=128, kernel_size=5, strides=(2,2), padding='same')
-        self.leakyRelu2 = tf.keras.layers.LeakyReLU()
-        self.dropout2 = tf.keras.layers.Dropout(0.3)
-        self.pooling2 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2)
-
-        self.pooling3 = tf.keras.layers.Flatten()
-        self.out = tf.keras.layers.Dense(1)
-
-    @tf.function(reduce_retracing=True)
-    def call(self,x):
-        x = self.convlayer1(x)
-        x = self.leakyRelu1(x)
-        x = self.dropout1(x)
-        #x = self.pooling1(x)
-
-        x = self.convlayer2(x)
-        x = self.leakyRelu2(x)
-        x = self.dropout2(x)
-        #x = self.pooling2(x)
-
-        x = self.pooling3(x)
-        x = self.out(x)
-        return x 
-
-#class gen_Layer(tf.keras.layers.Layer):
-#    def __init__ (self, num_filters):
-#        super(gen_Layer, self).__init__()
-
-#       self.convtrans1 = tf.keras.layers.Conv2DTranspose(filters=num_filters, kernel_size=5, strides=(1,1), padding='same')
-#        self.convtrans2 = tf.keras.layers.Conv2DTranspose(filters=num_filters, kernel_size=5, strides=(2,2), padding='same')
-
-#    @tf.function(reduce_retracing=True)
-#    def call(self, x):
-#        x = self.convtrans1(x)
-#        x = self.convtrans2(x)
-#        return x    
-
-class Generator_model(tf.keras.Model):
-    def __init__(self):
-        super(Generator_model, self).__init__()
+        super(generator_model, self).__init__()
 
         self.denselayer1 = tf.keras.layers.Dense(7*7*256, use_bias=False, input_shape=(100,))
         self.batchNormalization1 = tf.keras.layers.BatchNormalization()
@@ -97,11 +54,7 @@ class Generator_model(tf.keras.Model):
         self.batchNormalization3 = tf.keras.layers.BatchNormalization()
         self.leakyRelu3 = tf.keras.layers.LeakyReLU()
 
-        #self.conv2dTrans3 = tf.keras.layers.Conv2DTranspose(32, (5, 5), strides=(2,2), padding='same')
-        #self.batchNormalization4 = tf.keras.layers.BatchNormalization()
-        #self.leakyRelu4 = tf.keras.layers.LeakyReLU()
-
-        self.conv2dTrans4 = tf.keras.layers.Conv2DTranspose(filters=1, kernel_size=5, padding='same', strides=(2,2), use_bias=False, activation='tanh')
+        self.conv2dTrans3 = tf.keras.layers.Conv2DTranspose(filters=1, kernel_size=5, padding='same', strides=(2,2), use_bias=False, activation='tanh')
 
     @tf.function(reduce_retracing=True)
     def call(self, x):
@@ -115,15 +68,43 @@ class Generator_model(tf.keras.Model):
         x = self.conv2dTrans2(x)
         x = self.batchNormalization3(x)
         x = self.leakyRelu3(x)
-        #x = self.conv2dTrans3(x)
-        #x = self.batchNormalization4(x)
-        #x = self.leakyRelu4(x)
-        x = self.conv2dTrans4(x)
-        
+        x = self.conv2dTrans3(x)
         return x 
 
-discriminator = Discriminator_model()
-generator = Generator_model()
+generator = generator_model()
+
+#                                                 The Discriminator                                               #
+
+class discriminator_model(tf.keras.Model):
+    def __init__(self):
+        super(discriminator_model, self).__init__()
+
+        self.convlayer1 = tf.keras.layers.Conv2D(filters=64, kernel_size=5, strides=(2,2), padding='same', input_shape=[28, 28, 1])
+        self.leakyRelu1 = tf.keras.layers.LeakyReLU()
+        self.dropout1 = tf.keras.layers.Dropout(0.3)
+
+        self.convlayer2 = tf.keras.layers.Conv2D(filters=128, kernel_size=5, strides=(2,2), padding='same')
+        self.leakyRelu2 = tf.keras.layers.LeakyReLU()
+        self.dropout2 = tf.keras.layers.Dropout(0.3)
+
+        self.flatten = tf.keras.layers.Flatten()
+        self.out = tf.keras.layers.Dense(1)
+
+    @tf.function(reduce_retracing=True)
+    def call(self,x):
+        x = self.convlayer1(x)
+        x = self.leakyRelu1(x)
+        x = self.dropout1(x)
+
+        x = self.convlayer2(x)
+        x = self.leakyRelu2(x)
+        x = self.dropout2(x)
+
+        x = self.flatten(x)
+        x = self.out(x)
+        return x 
+
+discriminator = discriminator_model()
 
 #---------------------------------------------- Loss and Optimiser ----------------------------------------------#
 
@@ -143,6 +124,7 @@ def generator_loss(fake_output):
 generator_optimizer = tf.keras.optimizers.Adam(1e-4)
 discriminator_optimizer = tf.keras.optimizers.Adam(1e-4)
 
+
 #---------------------------------------------- Checkpoint Saving ----------------------------------------------#
 
 checkpoint_dir = './training_checkpoints/MusicGANs'
@@ -155,12 +137,22 @@ checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
 
 #---------------------------------------------- Training the model ----------------------------------------------#
 
-EPOCHS = 50
+EPOCHS = 80
 noise_dim = 100
-num_examples_to_generate = 8
+num_examples_to_generate = 16
 
 seed = tf.random.normal([num_examples_to_generate, noise_dim])
+
+###                                            ALTERNATING TRAINING                                            ###
+# Training Discriminator and Generator alternately  
+# NOT WORKING RIGHT NOW !!!
 '''
+discriminator_losses = []
+generator_losses = []
+
+generator_summary_writer = tf.summary.create_file_writer('Generative-Music-AI/logs/generator')
+discriminator_summary_writer = tf.summary.create_file_writer('Generative-Music-AI/logs/discriminator')
+
 @tf.function(reduce_retracing=True)
 def train_discriminator(images, step):
     noise = tf.random.normal([BATCH_SIZE, noise_dim])
@@ -193,11 +185,6 @@ def train_generator(step):
 
     with train_summary_writer.as_default():
         tf.summary.scalar('discriminator_loss', gen_loss, step=step)
-
-train_log_dir = 'logs/train'
-test_log_dir = 'logs/test'
-train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-test_summary_writer = tf.summary.create_file_writer(test_log_dir)
 
 checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
@@ -251,6 +238,10 @@ def train(dataset, epochs):
     generate_and_save_images(generator,stage=3, epoch=epochs, test_input=seed)
 
 '''
+
+###                                          SILMULTANEOUS TRAINING                                          ###
+# Training Discriminator and Generator simultaneously
+
 discriminator_losses = []
 generator_losses = []
 
@@ -316,6 +307,8 @@ def train(dataset, epochs):
     generate_and_save_images(generator, stage=1, epoch=epochs, test_input=seed)
 
 
+#-------------------------------------------- Image Generation --------------------------------------------#
+    
 def generate_and_save_images(model, stage, epoch, test_input):
     predictions = model(test_input, training=False)
 
