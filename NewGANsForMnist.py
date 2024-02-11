@@ -300,7 +300,7 @@ def generate_and_save_images(model, stage, epoch, test_input):
         plt.imshow(predictions[i, :, :, 0] * 127.5 + 127.5, cmap='gray')
         plt.axis('off')
     
-    plt.savefig('Mnist/image_stage_{:04d}_epoch_{:04d}.png'.format(stage, epoch))
+    plt.savefig('Generative-Music-AI/Mnist/image_stage_{}_epoch_{:04d}.png'.format(stage, epoch))
 
 
 subset_size = 20  
